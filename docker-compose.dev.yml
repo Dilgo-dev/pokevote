@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pokevote-postgres
+    environment:
+      POSTGRES_DB: pokevote
+      POSTGRES_USER: pokemon_trainer
+      POSTGRES_PASSWORD: gotta_catch_em_all
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - pokevote-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pokemon_trainer -d pokevote"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nextjs:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: pokevote-nextjs
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://pokemon_trainer:gotta_catch_em_all@postgres:5432/pokevote
+      - NEXTAUTH_SECRET=your-super-secret-key-here
+      - NEXTAUTH_URL=http://localhost:3000
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    networks:
+      - pokevote-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: npm run dev
+
+  redis:
+    image: redis:7-alpine
+    container_name: pokevote-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - pokevote-network
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  adminer:
+    image: adminer:latest
+    container_name: pokevote-adminer
+    ports:
+      - "8080:8080"
+    networks:
+      - pokevote-network
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  pokevote-network:
+    driver: bridge
